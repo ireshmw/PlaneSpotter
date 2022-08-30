@@ -1,0 +1,298 @@
+﻿@page "/"
+@inject IPlaneSightService  PlaneSightService;
+@using System.ComponentModel
+@using AntDesign.TableModels
+@using PlaneSpotter.Shared.Models
+@using System.Net.Http.Headers
+@inject NotificationService _notice
+
+
+<style>
+    .addBtn {
+        padding:12px;
+    }
+
+</style>
+
+<Row>
+    <Col Class="addBtn" Span="24" Offset="22">
+    <Button 
+        Type="@ButtonType.Primary" 
+        Icon="@IconType.Fill.PlusCircle" 
+        Size="large" 
+        Shape="@ButtonShape.Round"
+        OnClick="AddNew">ADD SIGHT</Button>
+  
+    </Col>
+</Row>
+
+<Table RenderMode="RenderMode.Always" TItem="SightRecord" DataSource="@PlaneSightService.Records.ToArray()" OnRowClick="OnRowClick">
+    <Column @bind-Field="@context.Make" Sortable Filterable />
+    <Column @bind-Field="@context.Model" Sortable Filterable />
+    <Column @bind-Field="@context.Registration" Sortable Filterable />
+    <Column @bind-Field="@context.Location" Sortable Filterable />
+    <Column @bind-Field="@context.DateTime" Format="dd/MM/yyyy HH:mm" Sortable Filterable />
+
+  <ActionColumn Title="Action">
+    <Space Size=@("middle")>
+        <SpaceItem>
+            <Button Type="@ButtonType.Primary" OnClick="()=>View(context)">View</Button>
+        </SpaceItem>
+      <SpaceItem>
+        <Button Block OnClick="()=>Edit(context)">Edit</Button>
+      </SpaceItem>
+      <SpaceItem>
+        <Popconfirm Title="Sure to delete?"
+                    OnConfirm="()=> Delete(context.Id,context)"
+            OkText="Yes"
+            CancelText="No">
+            <Button Danger Type="@ButtonType.Dashed">Delete</Button>
+        </Popconfirm>
+      </SpaceItem>
+    </Space>
+  </ActionColumn>
+</Table>
+
+<Spin Spinning=savingState Delay=500>
+    <Modal Title="@("Add/Edit Plane Sight Record")"
+       Visible="@_visible"
+       AfterClose="()=>AfterEditUpdateModelClose()"
+       OnOk="@HandleOk"
+       OnCancel="@HandleCancel">
+    <Form  Loading="loading" Model="@formRecord"
+          LabelColSpan="5"
+          WrapperColSpan="18"
+          OnFinish="OnFinish"
+          OnFinishFailed="OnFinishFailed"
+          @ref="@_form">
+        <FormItem Label="Make">
+            <Input @bind-Value="@context.Make" />
+        </FormItem>
+        <FormItem Label="Model">
+            <Input @bind-Value="@context.Model" />
+        </FormItem>
+        <FormItem Label="Registration">
+            <Input @bind-Value="@context.Registration" />
+        </FormItem>
+        <FormItem Label="Location">
+            <Input @bind-Value="@context.Location" />
+        </FormItem>
+        <FormItem Label="Date Time">
+            <DatePicker @bind-Value="@context.DateTime" ShowTime='@("HH:mm")' />
+        </FormItem>   
+        <FormItem Label="Image">
+            
+            <InputFile id="fileInput" OnChange="OnSelectImage" hidden />
+
+            <Upload Name="file" FileList="fileList">
+                <label class="ant-btn" for="fileInput">
+                    <Icon Type="upload" />
+                    Click to Upload
+                </label>
+            </Upload>
+
+        </FormItem>  
+    </Form>
+</Modal>
+</Spin>
+
+@{
+    RenderFragment footer = @<Template>
+        <Button OnClick="@HandleDetailModelCancel" @key="@( "back" )">Close</Button>
+    </Template>;
+}
+
+<Modal Title="@("Plane Sight Details")"
+       Visible="@showDetailModel"
+       Closable="true"
+       OnCancel="@HandleDetailModelCancel"
+       Footer="@footer">
+    <div>
+            <Card Bordered="true" Style="width: 100%">
+                <Row>
+                    <Col Span="12">
+                        <Statistic Title="Make" Value="@formRecord.Make" />     
+                    </Col>
+                    <Col Span="12">
+                        <Statistic Title="Model" Value="@formRecord.Model" />     
+                    </Col>
+                </Row>
+                <Row>
+                    <Col Span="12">
+                    <Statistic Title="Registration" Value="@formRecord.Registration" />
+                    </Col>
+                    <Col Span="12">
+                    <Statistic Title="Location" Value="@formRecord.Location" />
+                </Col>
+                </Row>
+                <Row>
+                    <Col Span="12">
+                        <Statistic Title="Date-Time" Value="@formRecord.DateTime.ToShortDateString()" />
+                    </Col>
+                </Row>
+
+            </Card>
+       </div>
+</Modal>
+
+
+@code {
+    bool _visible = false;
+    bool _isEdit = false;
+    bool _addNew = false;
+    bool loading = false;
+    bool savingState = false;
+    bool imageChanged = false;
+    bool showDetailModel = false;
+
+    private Form<SightRecord> _form;
+    private SightRecord formRecord;
+    List<UploadFileItem> fileList = new List<UploadFileItem>();
+    IBrowserFile? file;
+    private long maxFileSize = long.MaxValue;
+    MultipartFormDataContent addedImages = new MultipartFormDataContent();
+
+
+    public PlaneSight() => this.formRecord = new SightRecord();
+
+    protected override async Task OnInitializedAsync()
+    {
+        loading = true;
+        await PlaneSightService.GetSightRecords();
+        loading = false;
+    }
+
+    private void OnSelectImage(InputFileChangeEventArgs e)
+    {
+        foreach (var f in e.GetMultipleFiles())
+        {
+            file=f;
+            var fileContent = new StreamContent(file.OpenReadStream(maxFileSize));
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue(file.ContentType);
+
+            addedImages.Add(
+                content: fileContent,
+                name: "\"file\"",
+                fileName: file.Name);
+            imageChanged = true;
+        }
+        if (file != null)
+        {
+            fileList.Clear();
+            fileList.Add(new UploadFileItem { FileName = file.Name, Size = file.Size });
+
+        }
+
+    }
+
+    void toggle(bool value) => loading = value;
+
+    void OnRowClick(RowData<SightRecord> row){}
+
+    private Task? AfterDetailModelClose()
+    {
+        showDetailModel = false;
+        return null;
+    }
+    private void HandleDetailModelCancel(MouseEventArgs e)
+    {
+        Console.WriteLine("e"+showDetailModel);
+        showDetailModel = false;
+    }
+
+    void View(SightRecord record)
+    {
+        formRecord = record;
+        showDetailModel = true;
+    }
+
+    void AddNew ()
+    {
+        formRecord = new SightRecord();
+        _isEdit = false;
+        _visible = true;
+    }
+
+    void Edit(SightRecord record)
+    {
+        formRecord = record;
+        _isEdit = true;
+        _visible = true;
+    }
+
+    private async Task Delete(int id, SightRecord sightRecord)
+    {
+        await PlaneSightService.DeleteSightRecord(id,sightRecord);
+        Refresh();
+    }
+
+    private void HandleCancel(MouseEventArgs e)
+    {
+        _visible = false;
+    }
+
+    private Task? AfterEditUpdateModelClose()
+    {
+        fileList.Clear();
+        file = null;
+        return null;
+    }
+
+    private void OnFinishFailed(EditContext editContext){}
+
+    private async void OnFinish(EditContext editContext)
+    {
+        savingState = true;
+        if (imageChanged)
+        {
+            var response = await PlaneSightService.UploadImage(addedImages);
+            if (response != null)
+            {
+                formRecord.ImagePath = response.Url;
+                SaveOrEditData();
+            }
+            else
+            {
+                ShowNotificcation("Image Upload Fail", NotificationType.Error);
+                savingState = false;
+            }
+
+        }else
+        {
+            SaveOrEditData();
+        }
+
+    }
+
+    private async void SaveOrEditData()
+    {
+        if(_isEdit) await PlaneSightService.UpdateSightRecord(formRecord);
+        else
+            await PlaneSightService.AddSightRecord(formRecord);
+
+        ShowNotificcation("Sight Save Success!",NotificationType.Success);    
+        _visible = false;
+        savingState = false;
+        Refresh();
+    }
+
+    private async void Refresh()
+    {
+        await InvokeAsync(() => StateHasChanged())
+            .ConfigureAwait(false);
+    }
+
+    private void HandleOk(MouseEventArgs e)
+    {
+        _form.Submit();
+    }
+
+    private async void ShowNotificcation(string msg, NotificationType type)
+    {
+        await _notice.Open(new NotificationConfig()
+            {
+                Message = msg,
+                NotificationType = type
+            });
+    }
+}
